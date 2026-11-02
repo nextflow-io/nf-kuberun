@@ -1,0 +1,26 @@
+plugins {
+    id 'io.nextflow.nextflow-plugin' version '1.0.0-beta.16'
+}
+
+version = project.file('VERSION').text.trim()
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://s3-eu-west-1.amazonaws.com/maven.seqera.io/releases' }
+}
+
+ext.nfK8sVersion = '1.6.1'
+
+nextflowPlugin {
+    nextflowVersion = '26.10.3'
+
+    provider = 'nextflow'
+    description = 'Launch a Nextflow pipeline on a Kubernetes cluster with the driver running in a pod'
+    className = 'nextflow.kuberun.KubeRunPlugin'
+    requirePlugins = ["nf-k8s@>=${nfK8sVersion}".toString()]
+}
+
+dependencies {
+    compileOnly "io.nextflow:nf-k8s:${nfK8sVersion}"
+    testImplementation "io.nextflow:nf-k8s:${nfK8sVersion}"
+}
