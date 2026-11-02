@@ -237,28 +237,40 @@ class K8sDriverLauncher {
     protected List<Path> configFiles( String pipelineName ) {
         final List<Path> result = []
 
-        final home = Const.APP_HOME_DIR.resolve('config')
+        final home = getHomeDir().resolve('config')
         if( home.exists() )
             result << home
 
-        final local = Path.of(SysEnv.get('NXF_CONFIG_FILE') ?: 'nextflow.config').toAbsolutePath().normalize()
+        final local = getCurrentDir().resolve(SysEnv.get('NXF_CONFIG_FILE') ?: 'nextflow.config').normalize()
         if( local.exists() )
             result << local
 
         if( !interactive && !pipelineName.startsWith('/') && !options.remoteProfile && !options.remoteConfig ) {
-            final pipelineConfig = new AssetManager(pipelineName, options.revision, options.mainScript, options.toHubOptions()).getConfigFile()
+            final pipelineConfig = getPipelineConfig(pipelineName)
             if( pipelineConfig )
                 result << pipelineConfig
         }
 
         for( final it : options.config ) {
-            final file = Path.of(it).toAbsolutePath().normalize()
+            final file = getCurrentDir().resolve(it).normalize()
             if( !file.exists() )
                 throw new AbortOperationException("The specified configuration file does not exist: $file -- check the name or choose another file")
             result << file
         }
 
         return result
+    }
+
+    protected Path getPipelineConfig(String pipelineName) {
+        return new AssetManager(pipelineName, options.revision, options.mainScript, options.toHubOptions()).getConfigFile()
+    }
+
+    protected Path getHomeDir() {
+        return Const.APP_HOME_DIR
+    }
+
+    protected Path getCurrentDir() {
+        return Path.of('').toAbsolutePath()
     }
 
     protected K8sConfig makeK8sConfig(Map config) {
@@ -319,6 +331,12 @@ class K8sDriverLauncher {
         // -- set k8s executor
         config.process.executor = 'k8s'
 
+        // -- set work dir
+        if( options.workDir )
+            config.workDir = options.workDir
+        else if( !config.isSet('workDir') && SysEnv.get('NXF_WORK') )
+            config.workDir = SysEnv.get('NXF_WORK')
+
         // -- strip default work dir
         if( config.workDir == 'work' )
             config.remove('workDir')
@@ -326,8 +344,13 @@ class K8sDriverLauncher {
         // -- check work dir
         if( options.workDir )
             k8s.workDir = options.workDir
-        else if( !k8s.isSet('workDir') && config.workDir )
+        else if( !k8s.isSet('workDir') && config.isSet('workDir') )
             k8s.workDir = config.workDir
+
+        // -- set via config because the driver launcher turns a bare
+        //    `-stub-run` into a stray `true` script argument
+        if( options.stubRun )
+            config.stubRun = true
 
         if( options.plugins ) {
             final List<String> plugins = config.plugins ?: []
@@ -357,16 +380,31 @@ class K8sDriverLauncher {
             result << "$name ${Escape.wildcards(String.valueOf(value))}".toString()
     }
 
-    private static void addFlagOption(List<String> result, String name, String value) {
+    /**
+     * Add an option that takes an optional value, where `true` selects
+     * the default value and `false` disables it.
+     *
+     * The default value is selected by emitting the bare option, since the
+     * driver `nextflow` launcher adds the default value when the option is
+     * followed by another option.
+     */
+    private static void addOptionalValue(List<String> result, String name, String value) {
+        if( value == 'false' )
+            return
         if( value == 'true' )
-            result << "$name -".toString()
+            result << name
         else
             addOption(result, name, value)
     }
 
+    private static void addFlag(List<String> result, String name, boolean value) {
+        if( value )
+            result << name
+    }
+
     private static void addOptions(List<String> result, String prefix, Map<String,String> values) {
         for( final entry : values )
-            result << "$prefix${entry.key} ${Escape.wildcards(String.valueOf(entry.value))}".toString()
+            result << "$prefix${entry.key}=${Escape.wildcards(String.valueOf(entry.value))}".toString()
     }
 
     /**
@@ -395,26 +433,42 @@ class K8sDriverLauncher {
         result << "run"
         result << pipelineName
 
-        if( options.runName )
-            result << '-name' << options.runName
-
         if( options.cacheable == false )
             result << '-cache false'
-        if( options.resume )
+        if( options.resume && options.resume != 'false' )
             result << "-resume ${options.resume == 'true' ? 'last' : options.resume}".toString()
         addOption(result, '-ps', options.poolSize)
         addOption(result, '-pi', options.pollInterval)
         addOption(result, '-qs', options.queueSize)
         addOption(result, '-r', options.revision)
-        if( options.latest )
-            result << '-latest'
+        addFlag(result, '-latest', options.latest)
+        addFlag(result, '-offline', options.offline)
+        addOption(result, '-deep', options.deep)
         addOption(result, '-main-script', options.mainScript)
         addOption(result, '-hub', options.hubProvider)
-        addFlagOption(result, '-with-trace', options.withTrace)
-        addFlagOption(result, '-with-timeline', options.withTimeline)
-        addFlagOption(result, '-with-dag', options.withDag)
-        addFlagOption(result, '-dump-hashes', options.dumpHashes)
-        addOption(result, '-dump-channels', options.dumpChannels)
+        addOption(result, '-output-dir', options.outputDir)
+        addOption(result, '-output-format', options.outputFormat)
+        addOption(result, '-bucket-dir', options.bucketDir)
+        addOptionalValue(result, '-with-cloudcache', options.withCloudcache)
+        addOptionalValue(result, '-with-tower', options.withTower)
+        addOptionalValue(result, '-with-wave', options.withWave)
+        addOption(result, '-with-fusion', options.withFusion)
+        addOptionalValue(result, '-with-trace', options.withTrace)
+        addOptionalValue(result, '-with-report', options.withReport)
+        addOptionalValue(result, '-with-timeline', options.withTimeline)
+        addOptionalValue(result, '-with-dag', options.withDag)
+        addFlag(result, '-with-agent-trace', options.withAgentTrace)
+        addOption(result, '-with-notification', options.withNotification)
+        addOptionalValue(result, '-with-conda', options.withConda)
+        addFlag(result, '-without-conda', options.withoutConda)
+        addOptionalValue(result, '-with-spack', options.withSpack)
+        addFlag(result, '-without-spack', options.withoutSpack)
+        addOptionalValue(result, '-with-podman', options.withPodman)
+        addOptionalValue(result, '-with-charliecloud', options.withCharliecloud)
+        addFlag(result, '-preview', options.preview)
+        addFlag(result, '-disable-jobs-cancellation', options.disableJobsCancellation)
+        addOptionalValue(result, '-dump-hashes', options.dumpHashes)
+        addOptionalValue(result, '-dump-channels', options.dumpChannels)
         addOptions(result, '-e.', options.env)
         addOptions(result, '-process.', options.process)
         addOptions(result, '--', options.params)
@@ -428,6 +482,11 @@ class K8sDriverLauncher {
 
         if( options.remoteProfile )
             result << "-profile ${options.remoteProfile}".toString()
+
+        // the run name is always set and must be the last option, so that
+        // a preceding bare option cannot take a script argument as its value
+        if( options.runName )
+            result << '-name' << options.runName
 
         if( args )
             result.addAll(args)
@@ -554,11 +613,12 @@ class K8sDriverLauncher {
         }
 
         // params file
-        if( options.paramsFile ) {
-            final file = FileHelper.asPath(options.paramsFile)
+        final paramsFile = options.paramsFile ?: SysEnv.get('NXF_PARAMS_FILE')
+        if( paramsFile ) {
+            final file = FileHelper.asPath(paramsFile)
             if( !file.exists() ) throw new NoSuchFileException("Params file does not exist: $file")
             configMap[ file.getName() ] = file.text
-            paramsFile = "/etc/nextflow/$file.name"
+            this.paramsFile = "/etc/nextflow/$file.name"
         }
 
         // create the config map

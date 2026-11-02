@@ -18,6 +18,7 @@ package nextflow.kuberun
 
 import java.nio.file.Files
 
+import nextflow.SysEnv
 import nextflow.exception.AbortOperationException
 import nextflow.k8s.K8sConfig
 import nextflow.k8s.client.ClientConfig
@@ -108,16 +109,50 @@ class K8sDriverLauncherTest extends Specification {
         [latest: true]                      | 'nextflow run foo -latest'
         [mainScript: 'x.nf']                | 'nextflow run foo -main-script x.nf'
         [hubProvider: 'gitlab']             | 'nextflow run foo -hub gitlab'
-        [withTrace: 'true']                 | 'nextflow run foo -with-trace -'
+        [resume: 'false']                   | 'nextflow run foo'
+        [withTrace: 'true']                 | 'nextflow run foo -with-trace'
+        [withTrace: 'false']                | 'nextflow run foo'
         [withTrace: 'trace.txt']            | 'nextflow run foo -with-trace trace.txt'
-        [withTimeline: 'true']              | 'nextflow run foo -with-timeline -'
-        [withDag: 'true']                   | 'nextflow run foo -with-dag -'
-        [dumpHashes: 'true']                | 'nextflow run foo -dump-hashes -'
+        [withTimeline: 'true']              | 'nextflow run foo -with-timeline'
+        [withTimeline: 'false']             | 'nextflow run foo'
+        [withDag: 'true']                   | 'nextflow run foo -with-dag'
+        [withDag: 'false']                  | 'nextflow run foo'
+        [dumpHashes: 'true']                | 'nextflow run foo -dump-hashes'
+        [dumpHashes: 'false']               | 'nextflow run foo'
+        [dumpHashes: 'json']                | 'nextflow run foo -dump-hashes json'
+        [dumpChannels: 'true']              | 'nextflow run foo -dump-channels'
         [dumpChannels: 'lala']              | 'nextflow run foo -dump-channels lala'
-        [env: [XX:'hello', YY: 'world']]    | 'nextflow run foo -e.XX hello -e.YY world'
-        [process: [mem: '100',cpus:'2']]    | 'nextflow run foo -process.mem 100 -process.cpus 2'
-        [params: [alpha:'x', beta:'y']]     | 'nextflow run foo --alpha x --beta y'
-        [params: [alpha: '/path/*.txt']]    | 'nextflow run foo --alpha /path/\\*.txt'
+        [offline: true]                     | 'nextflow run foo -offline'
+        [deep: 1]                           | 'nextflow run foo -deep 1'
+        [outputDir: '/mnt/out']             | 'nextflow run foo -output-dir /mnt/out'
+        [outputFormat: 'json']              | 'nextflow run foo -output-format json'
+        [bucketDir: 's3://b/work']          | 'nextflow run foo -bucket-dir s3\\://b/work'
+        [withCloudcache: 'true']            | 'nextflow run foo -with-cloudcache'
+        [withCloudcache: 's3://b/cache']    | 'nextflow run foo -with-cloudcache s3\\://b/cache'
+        [withTower: 'true']                 | 'nextflow run foo -with-tower'
+        [withTower: 'https://x.io/api']     | 'nextflow run foo -with-tower https\\://x.io/api'
+        [withWave: 'true']                  | 'nextflow run foo -with-wave'
+        [withFusion: 'true']                | 'nextflow run foo -with-fusion true'
+        [withFusion: 'false']               | 'nextflow run foo -with-fusion false'
+        [withReport: 'true']                | 'nextflow run foo -with-report'
+        [withReport: 'r.html']              | 'nextflow run foo -with-report r.html'
+        [withAgentTrace: true]              | 'nextflow run foo -with-agent-trace'
+        [withNotification: 'me@x.io']       | 'nextflow run foo -with-notification me@x.io'
+        [withConda: 'true']                 | 'nextflow run foo -with-conda'
+        [withConda: 'env.yml']              | 'nextflow run foo -with-conda env.yml'
+        [withoutConda: true]                | 'nextflow run foo -without-conda'
+        [withSpack: 'true']                 | 'nextflow run foo -with-spack'
+        [withoutSpack: true]                | 'nextflow run foo -without-spack'
+        [withPodman: 'true']                | 'nextflow run foo -with-podman'
+        [withPodman: 'ubuntu']              | 'nextflow run foo -with-podman ubuntu'
+        [withCharliecloud: 'true']          | 'nextflow run foo -with-charliecloud'
+        [stubRun: true]                     | 'nextflow run foo'
+        [preview: true]                     | 'nextflow run foo -preview'
+        [disableJobsCancellation: true]     | 'nextflow run foo -disable-jobs-cancellation'
+        [env: [XX:'hello', YY: 'world']]    | 'nextflow run foo -e.XX=hello -e.YY=world'
+        [process: [mem: '100',cpus:'2']]    | 'nextflow run foo -process.mem=100 -process.cpus=2'
+        [params: [alpha:'x', beta:'y']]     | 'nextflow run foo --alpha=x --beta=y'
+        [params: [alpha: '/path/*.txt']]    | 'nextflow run foo --alpha=/path/\\*.txt'
         [entryName: 'lala']                 | 'nextflow run foo -entry lala'
         [remoteConfig: ['/a.config','/b.config']] | 'nextflow run foo -config /a.config -config /b.config'
         [remoteProfile: 'cluster']          | 'nextflow run foo -profile cluster'
@@ -131,7 +166,7 @@ class K8sDriverLauncherTest extends Specification {
         def l = new K8sDriverLauncher(options: new KubeRunOptions(params: [x: '1']), pipelineName: 'foo', args: ['a', 'b'])
 
         expect:
-        l.getLaunchCli() == 'nextflow run foo --x 1 a b'
+        l.getLaunchCli() == 'nextflow run foo --x=1 a b'
     }
 
     def 'should reject process executor option' () {
@@ -150,6 +185,13 @@ class K8sDriverLauncherTest extends Specification {
         def l = new K8sDriverLauncher(options: new KubeRunOptions(runName: 'bar'), pipelineName: 'foo')
         then:
         l.getLaunchCli() == 'nextflow run foo -name bar'
+    }
+
+    def 'should put the run name after bare options and before script args' () {
+        when:
+        def l = new K8sDriverLauncher(options: new KubeRunOptions(runName: 'bar', withTrace: 'true', remoteProfile: 'x'), pipelineName: 'foo', args: ['a'])
+        then:
+        l.getLaunchCli() == 'nextflow run foo -with-trace -profile x -name bar a'
     }
 
     def 'should use interactive command for login' () {
@@ -421,6 +463,37 @@ class K8sDriverLauncherTest extends Specification {
         folder?.deleteDir()
     }
 
+    def 'should use the NXF_PARAMS_FILE params file' () {
+        given:
+        def folder = Files.createTempDirectory('foo')
+        def params = folder.resolve('params.yml')
+        params.text = 'x: 1'
+        def POD_OPTIONS = new PodOptions()
+        def K8S_CONFIG = Mock(K8sConfig)
+        K8S_CONFIG.getLaunchDir() >> '/launch/dir'
+        K8S_CONFIG.getPodOptions() >> POD_OPTIONS
+        def driver = Spy(K8sDriverLauncher)
+        driver.@config = new ConfigObject()
+        driver.@k8sConfig = K8S_CONFIG
+        driver.@options = new KubeRunOptions()
+        driver.@pipelineName = 'foo'
+        SysEnv.push(NXF_PARAMS_FILE: params.toString())
+
+        when:
+        driver.createK8sConfigMap()
+        then:
+        1 * driver.getScmFile() >> folder.resolve('scm')
+        1 * driver.tryCreateConfigMap(_, _ as Map) >> { name, cfg ->
+            assert cfg.'params.yml' == 'x: 1'
+            return null
+        }
+        driver.getLaunchCli() == 'nextflow run foo -params-file /etc/nextflow/params.yml'
+
+        cleanup:
+        SysEnv.pop()
+        folder?.deleteDir()
+    }
+
     def 'should create config map with pre-script' () {
 
         given:
@@ -575,25 +648,137 @@ class K8sDriverLauncherTest extends Specification {
         config.k8s.workDir == '/mnt/work'
     }
 
+    def 'should set stub run in the config' () {
+        given:
+        def driver = Spy(K8sDriverLauncher)
+        driver.@options = new KubeRunOptions(stubRun: true)
+
+        when:
+        def config = driver.makeConfig('foo').toMap()
+        then:
+        1 * driver.loadConfig('foo') >> new ConfigObject()
+        config.stubRun == true
+    }
+
+    def 'should override the config work dir' () {
+        given:
+        def driver = Spy(K8sDriverLauncher)
+        def CFG = new ConfigObject()
+        CFG.workDir = '/from/config'
+
+        when:
+        driver.@options = new KubeRunOptions(workDir: '/from/cli')
+        def config = driver.makeConfig('foo').toMap()
+        then:
+        1 * driver.loadConfig('foo') >> CFG
+        config.workDir == '/from/cli'
+        config.k8s.workDir == '/from/cli'
+    }
+
+    def 'should use the config work dir' () {
+        given:
+        def driver = Spy(K8sDriverLauncher)
+        def CFG = new ConfigObject()
+        CFG.workDir = '/from/config'
+        SysEnv.push(NXF_WORK: '/from/env')
+
+        when:
+        driver.@options = new KubeRunOptions()
+        def config = driver.makeConfig('foo').toMap()
+        then:
+        1 * driver.loadConfig('foo') >> CFG
+        config.workDir == '/from/config'
+        config.k8s.workDir == '/from/config'
+
+        cleanup:
+        SysEnv.pop()
+    }
+
+    def 'should use the NXF_WORK work dir' () {
+        given:
+        def driver = Spy(K8sDriverLauncher)
+        SysEnv.push(NXF_WORK: WORK)
+
+        when:
+        driver.@options = new KubeRunOptions()
+        def config = driver.makeConfig('foo').toMap()
+        then:
+        1 * driver.loadConfig('foo') >> new ConfigObject()
+        config.workDir == EXPECTED
+        config.k8s.workDir == EXPECTED
+
+        cleanup:
+        SysEnv.pop()
+
+        where:
+        WORK            | EXPECTED
+        '/from/env'     | '/from/env'
+        'work'          | null
+    }
+
     def 'should resolve config files' () {
         given:
         def folder = Files.createTempDirectory('test')
-        def userConfig = folder.resolve('user.config')
-        userConfig.text = 'foo = 1'
+        def home = Files.createDirectories(folder.resolve('home'))
+        def launch = Files.createDirectories(folder.resolve('launch'))
+        def homeConfig = home.resolve('config'); homeConfig.text = 'a = 1'
+        def localConfig = launch.resolve('nextflow.config'); localConfig.text = 'b = 1'
+        def pipelineConfig = folder.resolve('pipeline.config'); pipelineConfig.text = 'c = 1'
+        def userConfig = launch.resolve('user.config'); userConfig.text = 'd = 1'
+        and:
+        def driver = Spy(K8sDriverLauncher)
+        driver.getHomeDir() >> home
+        driver.getCurrentDir() >> launch
 
         when:
-        def driver = new K8sDriverLauncher(options: new KubeRunOptions(config: [userConfig.toString()], remoteProfile: 'x'))
+        driver.@options = new KubeRunOptions(config: ['user.config'])
         def files = driver.configFiles('foo')
         then:
-        files.last() == userConfig
+        1 * driver.getPipelineConfig('foo') >> pipelineConfig
+        files == [homeConfig, localConfig, pipelineConfig, userConfig]
 
         when:
-        driver = new K8sDriverLauncher(options: new KubeRunOptions(config: [folder.resolve('missing.config').toString()], remoteProfile: 'x'))
+        driver.@options = new KubeRunOptions(config: ['user.config'], remoteProfile: 'x')
+        files = driver.configFiles('foo')
+        then:
+        0 * driver.getPipelineConfig(_)
+        files == [homeConfig, localConfig, userConfig]
+
+        when:
+        driver.@options = new KubeRunOptions()
+        files = driver.configFiles('/abs/project')
+        then:
+        0 * driver.getPipelineConfig(_)
+        files == [homeConfig, localConfig]
+
+        when:
+        driver.@options = new KubeRunOptions(config: ['missing.config'], remoteProfile: 'x')
         driver.configFiles('foo')
         then:
         thrown(AbortOperationException)
 
         cleanup:
+        folder?.deleteDir()
+    }
+
+    def 'should use the NXF_CONFIG_FILE local config' () {
+        given:
+        def folder = Files.createTempDirectory('test')
+        def custom = folder.resolve('custom.config'); custom.text = 'a = 1'
+        folder.resolve('nextflow.config').text = 'b = 1'
+        def driver = Spy(K8sDriverLauncher)
+        driver.getHomeDir() >> folder.resolve('home')
+        driver.getCurrentDir() >> folder
+        SysEnv.push(NXF_CONFIG_FILE: 'custom.config')
+
+        when:
+        driver.@options = new KubeRunOptions(remoteProfile: 'x')
+        def files = driver.configFiles('foo')
+        then:
+        files == [custom]
+
+        cleanup:
+        SysEnv.pop()
         folder?.deleteDir()
     }
 

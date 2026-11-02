@@ -84,6 +84,28 @@ class KubeRunOptionsTest extends Specification {
         'plugins'           | 'nf-amazon'           | 'plugins'         | 'nf-amazon'
         'hub'               | 'gitlab'              | 'hubProvider'     | 'gitlab'
         'user'              | 'me'                  | 'hubUser'         | 'me'
+        'output-dir'        | '/mnt/out'            | 'outputDir'       | '/mnt/out'
+        'output-format'     | 'json'                | 'outputFormat'    | 'json'
+        'bucket-dir'        | 's3://b/w'            | 'bucketDir'       | 's3://b/w'
+        'with-cloudcache'   | 'true'                | 'withCloudcache'  | 'true'
+        'with-tower'        | 'true'                | 'withTower'       | 'true'
+        'with-wave'         | 'true'                | 'withWave'        | 'true'
+        'with-fusion'       | 'true'                | 'withFusion'      | 'true'
+        'with-report'       | 'r.html'              | 'withReport'      | 'r.html'
+        'with-notification' | 'me@x.io'             | 'withNotification'| 'me@x.io'
+        'with-conda'        | 'env.yml'             | 'withConda'       | 'env.yml'
+        'without-conda'     | 'true'                | 'withoutConda'    | true
+        'with-spack'        | 'true'                | 'withSpack'       | 'true'
+        'without-spack'     | 'true'                | 'withoutSpack'    | true
+        'with-podman'       | 'ubuntu'              | 'withPodman'      | 'ubuntu'
+        'with-charliecloud' | 'true'                | 'withCharliecloud'| 'true'
+        'with-agent-trace'  | 'true'                | 'withAgentTrace'  | true
+        'stub-run'          | 'true'                | 'stubRun'         | true
+        'stub'              | 'true'                | 'stubRun'         | true
+        'preview'           | 'true'                | 'preview'         | true
+        'offline'           | 'true'                | 'offline'         | true
+        'deep'              | '1'                   | 'deep'            | 1
+        'disable-jobs-cancellation' | 'true'        | 'disableJobsCancellation' | true
         'params.name'       | 'x'                   | 'params'          | [name: 'x']
         'foo'               | 'x'                   | 'params'          | [foo: 'x']
     }
@@ -97,7 +119,26 @@ class KubeRunOptionsTest extends Specification {
         e.message == "Option `--$KEY` not supported with Kubernetes deployment"
 
         where:
-        KEY << ['with-docker', 'lib', 'stub-run', 'with-report', 'executor.queueSize', 'cluster.foo']
+        KEY << ['with-docker', 'without-docker', 'with-singularity', 'with-apptainer', 'with-mpi', 'lib', 'test', 'stdin', 'E', 'export-sys-env', 'executor.queueSize', 'cluster.foo']
+    }
+
+    def 'should reject the weblog option' () {
+        when:
+        KubeRunOptions.parse(['hello', '--with-weblog', 'true'])
+        then:
+        def e = thrown(AbortOperationException)
+        e.message.contains('nf-weblog')
+    }
+
+    @Unroll
+    def 'should ignore option #KEY' () {
+        when:
+        def opts = KubeRunOptions.parse(['hello', "--$KEY".toString(), 'true'])
+        then:
+        opts.params == [:]
+
+        where:
+        KEY << ['ansi', 'ansi-log', 'without-podman']
     }
 
     @Unroll
@@ -113,6 +154,9 @@ class KubeRunOptionsTest extends Specification {
         'queue-size'    | '1.5'
         'background'    | 'yes'
         'cache'         | '1'
+        'with-fusion'   | 'yes'
+        'stub-run'      | 'x'
+        'deep'          | 'one'
     }
 
     def 'should reject missing option value' () {
