@@ -85,14 +85,8 @@ Short option names, such as `-v`, `-n`, `-r` and `-w`, are not supported, since 
 
 ## Development
 
-Build and run the unit tests:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development and release process.
 
-```bash
-make test
-```
+## License
 
-Install the plugin into your local Nextflow plugins directory:
-
-```bash
-make install
-```
+This project is licensed under the [Apache License 2.0](./COPYING).
