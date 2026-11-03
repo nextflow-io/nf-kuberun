@@ -4,7 +4,7 @@ All notable changes to the nf-kuberun plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-03
 
 Initial release, migrated from the `kuberun` command of Nextflow. Differences from the `kuberun` command:
 
