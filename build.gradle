@@ -12,7 +12,7 @@ repositories {
 ext.nfK8sVersion = '1.6.1'
 
 nextflowPlugin {
-    nextflowVersion = '26.10.3'
+    nextflowVersion = '26.10.0'
 
     provider = 'nextflow'
     description = 'Launch a Nextflow pipeline on a Kubernetes cluster with the driver running in a pod'
